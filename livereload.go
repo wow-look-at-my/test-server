@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,16 +17,13 @@ const (
 	livereloadJSPath = "/__livereload/client.js"
 )
 
-// livereloadClientJS is served at livereloadJSPath and injected into every
-// HTML response. It opens an SSE connection and reloads the page on any
-// message. EventSource reconnects automatically if the connection drops.
-const livereloadClientJS = `(function(){
-  try {
-    var es = new EventSource("` + livereloadPath + `");
-    es.onmessage = function(){ location.reload(); };
-    es.onerror = function(){ /* EventSource auto-reconnects */ };
-  } catch (e) { console.warn("livereload: " + e); }
-})();`
+// livereloadClientJS is the client-side livereload script, embedded from
+// livereload_client.js. It's served at livereloadJSPath and a <script> tag
+// referencing it gets injected into every HTML response. The script opens
+// an SSE connection to livereloadPath and reloads the page on any message.
+//
+//go:embed livereload_client.js
+var livereloadClientJS string
 
 // reloadHub is a fan-out of reload notifications to all connected SSE
 // clients. Broadcasting is non-blocking and coalesces — a client that

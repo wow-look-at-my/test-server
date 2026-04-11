@@ -131,18 +131,36 @@ func walkDirsRec(dir string, followSymlinks bool, add func(string), visited map[
 	return nil
 }
 
-// shouldIgnoreEvent filters out churn from common editor save-strategies
-// (backup files, swap files, vim's atomic-save probe) so that saving a
-// file in vim doesn't trigger two reloads.
+// shouldIgnoreEvent filters out churn from common editor save strategies
+// so that editing one file doesn't trigger a storm of reloads. Editors
+// typically touch several files around every save (backups, lock files,
+// swap files, atomic-rename dance, etc.); we want to ignore those and
+// only react to the real content change.
 func shouldIgnoreEvent(path string) bool {
 	base := filepath.Base(path)
 	switch {
+	// Trailing "~": emacs, nano, and many other editors write backup
+	// files alongside the real file, e.g. "index.html~".
 	case strings.HasSuffix(base, "~"):
 		return true
+
+	// Leading ".#": emacs lock files, e.g. ".#index.html". These are
+	// symlinks emacs creates to mark a buffer as being edited.
 	case strings.HasPrefix(base, ".#"):
 		return true
+
+	// ".swp" / ".swx": vim swap files. Vim writes these while a buffer
+	// is open so it can recover from a crash.
 	case strings.HasSuffix(base, ".swp"), strings.HasSuffix(base, ".swx"):
 		return true
+
+	// "4913": vim's atomic-save probe. When `:w`ing a file, vim first
+	// creates a file literally named "4913" (or 4914, 4915, ... if
+	// 4913 already exists) in the target directory to test whether it
+	// can write there. If the probe succeeds, vim deletes it and
+	// performs the real atomic rename. See vim source: src/fileio.c,
+	// function vim_create_and_check_writeable(). We ignore the probe
+	// so saves don't produce a spurious extra reload.
 	case base == "4913":
 		return true
 	}

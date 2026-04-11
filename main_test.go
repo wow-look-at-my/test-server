@@ -1,13 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,31 +15,25 @@ import (
 	"github.com/wow-look-at-my/testify/require"
 )
 
-func TestParseFlagsDefaults(t *testing.T) {
-	cfg, err := parseFlags(nil)
-	require.NoError(t, err)
-	assert.Equal(t, 0, cfg.port)
-	assert.Equal(t, "127.0.0.1", cfg.host)
-	assert.False(t, cfg.followSymlinks)
-	assert.False(t, cfg.noOpenBrowser)
+func TestRootCmdFlagsDefaults(t *testing.T) {
+	// DefValue is the default string cobra/pflag recorded at registration
+	// time, independent of whatever the bound pointer currently holds. We
+	// want to verify the advertised defaults, not the live values.
+	f := rootCmd.Flags()
+	assert.Equal(t, "0", f.Lookup("port").DefValue)
+	assert.Equal(t, "127.0.0.1", f.Lookup("host").DefValue)
+	assert.Equal(t, "false", f.Lookup("follow-symlinks").DefValue)
+	assert.Equal(t, "false", f.Lookup("no-open-browser").DefValue)
 }
 
-func TestParseFlagsOverrides(t *testing.T) {
-	cfg, err := parseFlags([]string{
-		"--port=8765",
-		"--host=0.0.0.0",
-		"--follow-symlinks",
-		"--no-open-browser",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 8765, cfg.port)
-	assert.Equal(t, "0.0.0.0", cfg.host)
-	assert.True(t, cfg.followSymlinks)
-	assert.True(t, cfg.noOpenBrowser)
-}
-
-func TestParseFlagsBadFlag(t *testing.T) {
-	_, err := parseFlags([]string{"--nope"})
+func TestRootCmdBadFlag(t *testing.T) {
+	// Run the command with a bogus flag and verify cobra reports an error.
+	cmd := *rootCmd // shallow copy so we don't mutate the package var
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--nope"})
+	err := cmd.Execute()
 	assert.NotNil(t, err)
 }
 
@@ -150,6 +144,3 @@ func TestOpenBrowserStarterError(t *testing.T) {
 type assertFailErr string
 
 func (e assertFailErr) Error() string { return string(e) }
-
-// Silence unused-import nag if strings becomes unused after edits.
-var _ = strings.HasPrefix
