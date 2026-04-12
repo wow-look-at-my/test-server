@@ -46,6 +46,8 @@ cross-origin-isolation headers set. Intended for local web development.`,
 }
 
 func init() {
+	rootCmd.Version = version
+
 	f := rootCmd.Flags()
 	f.IntVar(&rootCfg.port, "port", 0, "TCP port to bind (0 = pick a free one)")
 	f.StringVar(&rootCfg.host, "host", "127.0.0.1", "host to bind")
