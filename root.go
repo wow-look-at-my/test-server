@@ -31,6 +31,8 @@ type config struct {
 // pointer that outlives flag registration.
 var rootCfg config
 
+var version = "dev"
+
 // rootCmd is the only command this binary has — the server itself.
 // Having it as a top-level var lets init() register flags without the
 // main file needing to know about any of this.
@@ -47,7 +49,6 @@ cross-origin-isolation headers set. Intended for local web development.`,
 
 func init() {
 	rootCmd.Version = version
-
 	f := rootCmd.Flags()
 	f.IntVar(&rootCfg.port, "port", 0, "TCP port to bind (0 = pick a free one)")
 	f.StringVar(&rootCfg.host, "host", "127.0.0.1", "host to bind")
