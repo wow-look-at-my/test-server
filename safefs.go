@@ -69,7 +69,26 @@ func isWithin(root, p string) bool {
 	if err != nil {
 		rootClean = filepath.Clean(root)
 	}
-	pClean := filepath.Clean(p)
+	pClean, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		// p may not exist; walk up to the first existing ancestor and resolve that
+		pClean = filepath.Clean(p)
+		ancestor := pClean
+		var tail []string
+		for {
+			resolved, err2 := filepath.EvalSymlinks(ancestor)
+			if err2 == nil {
+				pClean = filepath.Join(append([]string{resolved}, tail...)...)
+				break
+			}
+			tail = append([]string{filepath.Base(ancestor)}, tail...)
+			parent := filepath.Dir(ancestor)
+			if parent == ancestor {
+				break // reached filesystem root without resolving
+			}
+			ancestor = parent
+		}
+	}
 	rel, err := filepath.Rel(rootClean, pClean)
 	if err != nil {
 		return false
