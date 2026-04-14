@@ -14,4 +14,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          autorelease: 'true'
+          # Autorelease is disabled until the fix in
+          # wow-look-at-my/go-toolchain#<pr> (branch
+          # claude/fix-autorelease-ci-BgSuS) is merged and the v1 branch is
+          # updated. The fix addresses two bugs that break autorelease on
+          # repos with a default branch named "master" (ambiguous rolling-tag
+          # push refspec) and on any consumer whose binary is not named
+          # "go-toolchain" (hardcoded artifact glob).
+          autorelease: 'false'
