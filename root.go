@@ -31,8 +31,6 @@ type config struct {
 // pointer that outlives flag registration.
 var rootCfg config
 
-var version = "dev"
-
 // rootCmd is the only command this binary has — the server itself.
 // Having it as a top-level var lets init() register flags without the
 // main file needing to know about any of this.
