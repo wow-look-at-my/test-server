@@ -53,13 +53,15 @@ test-server
 
 ### Flags
 
-| Flag                 | Default     | Description                                                |
-|----------------------|-------------|------------------------------------------------------------|
-| `--port N`           | `0` (auto)  | TCP port to bind. `0` asks the OS for a free one.          |
-| `--host HOST`        | `127.0.0.1` | Host to bind to.                                           |
-| `--follow-symlinks`  | `false`     | Allow serving files reached via symlinks escaping the cwd. |
-| `--no-open-browser`  | `false`     | Don't open a browser window on startup.                    |
-| `--version`          |             | Print the version and exit.                                |
+| Flag                   | Default     | Description                                                              |
+|------------------------|-------------|--------------------------------------------------------------------------|
+| `--port N`             | `0` (auto)  | TCP port to bind. `0` asks the OS for a free one.                        |
+| `--host HOST`          | `127.0.0.1` | Host to bind to.                                                         |
+| `--follow-symlinks`    | `false`     | Allow serving files reached via symlinks escaping the cwd.               |
+| `--no-open-browser`    | `false`     | Don't open a browser window on startup.                                  |
+| `--reload-debounce D`  | `250ms`     | Trailing-edge debounce window for live-reload file-change batching.      |
+| `--no-livereload`      | `false`     | Disable live reload (no watcher, no script injection, 404 `/__livereload`). |
+| `--version`            |             | Print the version and exit.                                              |
 
 ### Subcommands
 
@@ -73,14 +75,29 @@ Both commands accept `--version` to target a specific release instead of latest.
 ### Live reload
 
 The server watches every directory under the cwd (minus `.git` and
-`node_modules`) with `fsnotify`. On any change, after a short debounce
-(~100 ms), it broadcasts a `data: reload` event to every connected SSE
-client. Pages pick up the event via an injected `<script>` tag and call
-`location.reload()`.
+`node_modules`) with `fsnotify`. Events are batched over a trailing-edge
+debounce window (default `250ms`, configurable with `--reload-debounce`):
+the window resets on every new event, so the reload fires after writes
+stop, not on the first event. The batched change list is broadcast as a
+Server-Sent Event, for example:
+
+```
+data: {"changes":[{"path":"index.html","op":"WRITE"}]}
+```
+
+Paths are relative to the serve root (forward-slash separated). The op
+string is a `|`-joined list of the fsnotify bits that triggered the
+event (`CREATE`, `WRITE`, `REMOVE`, `RENAME`, `CHMOD`). Pages pick up
+the event via an injected `<script>` tag and call `location.reload()`.
+Both the server console and the browser console log each changed file so
+you can see exactly what caused a reload.
 
 The injected tag is only added to responses with
 `Content-Type: text/html`, right before `</body>` (or at the end if there
 isn't one). Non-HTML responses are passed through untouched.
+
+Pass `--no-livereload` to disable the watcher, skip script injection
+entirely, and return `404` for the two `/__livereload` endpoints.
 
 ## Development
 
