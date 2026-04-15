@@ -36,7 +36,7 @@ func TestSetCommonHeaders(t *testing.T) {
 
 func TestServerOptionsPreflight(t *testing.T) {
 	hub := newReloadHub()
-	srv := newServer(t.TempDir(), false, hub)
+	srv := newServer(t.TempDir(), false, hub, true)
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -53,7 +53,7 @@ func TestServerServesFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "plain.txt"), []byte("not html"), 0o644))
 
 	hub := newReloadHub()
-	srv := newServer(dir, false, hub)
+	srv := newServer(dir, false, hub, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -97,7 +97,7 @@ func TestServerFollowSymlinksOff(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), false, hub)
+	srv := newServer(mustEval(t, dir), false, hub, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -123,7 +123,7 @@ func TestServerFollowSymlinksOn(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), true, hub)
+	srv := newServer(mustEval(t, dir), true, hub, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -134,6 +134,35 @@ func TestServerFollowSymlinksOn(t *testing.T) {
 	resp.Body.Close()
 	assert.False(t, resp.StatusCode != 200 || string(body) != "ok!")
 
+}
+
+func TestServerLivereloadDisabled(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html><body>hi</body></html>"), 0o644))
+
+	hub := newReloadHub()
+	srv := newServer(dir, false, hub, false)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// HTML: should NOT have the livereload script injected.
+	resp, err := http.Get(ts.URL + "/")
+	require.Nil(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotContains(t, string(body), livereloadJSPath)
+
+	// Livereload endpoints should 404 (no such file on disk).
+	resp, err = http.Get(ts.URL + livereloadJSPath)
+	require.Nil(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	resp, err = http.Get(ts.URL + livereloadPath)
+	require.Nil(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 func mustEval(t *testing.T, p string) string {

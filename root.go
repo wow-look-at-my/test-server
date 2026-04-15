@@ -24,6 +24,8 @@ type config struct {
 	port           int
 	followSymlinks bool
 	noOpenBrowser  bool
+	reloadDebounce time.Duration
+	noLivereload   bool
 }
 
 // rootCfg is the shared config populated by cobra flag parsing. It's a
@@ -52,6 +54,8 @@ func init() {
 	f.StringVar(&rootCfg.host, "host", "127.0.0.1", "host to bind")
 	f.BoolVar(&rootCfg.followSymlinks, "follow-symlinks", false, "allow serving files reached via symlinks that escape the cwd")
 	f.BoolVar(&rootCfg.noOpenBrowser, "no-open-browser", false, "do not open a browser window on startup")
+	f.DurationVar(&rootCfg.reloadDebounce, "reload-debounce", 250*time.Millisecond, "debounce window for live-reload file-change batching (trailing-edge)")
+	f.BoolVar(&rootCfg.noLivereload, "no-livereload", false, "disable live reload (no watcher, no script injection, 404 /__livereload)")
 }
 
 func runRootCmd(cmd *cobra.Command, _ []string) error {
@@ -86,7 +90,7 @@ func registerMimeTypes() {
 // launching without actually spawning a process.
 func run(ctx context.Context, cfg config, root string, opener func(string)) error {
 	hub := newReloadHub()
-	srv := newServer(root, cfg.followSymlinks, hub)
+	srv := newServer(root, cfg.followSymlinks, hub, !cfg.noLivereload)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.host, cfg.port))
 	if err != nil {
@@ -101,12 +105,18 @@ func run(ctx context.Context, cfg config, root string, opener func(string)) erro
 	}
 
 	watcherDone := make(chan struct{})
-	go func() {
-		defer close(watcherDone)
-		if err := watchTree(ctx, root, cfg.followSymlinks, hub); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("watcher: %v", err)
-		}
-	}()
+	if cfg.noLivereload {
+		// Skip the watcher entirely. Close the channel so the
+		// shutdown-path <-watcherDone below doesn't deadlock.
+		close(watcherDone)
+	} else {
+		go func() {
+			defer close(watcherDone)
+			if err := watchTree(ctx, root, cfg.followSymlinks, cfg.reloadDebounce, hub); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("watcher: %v", err)
+			}
+		}()
+	}
 
 	serverDone := make(chan error, 1)
 	go func() {
@@ -115,6 +125,11 @@ func run(ctx context.Context, cfg config, root string, opener func(string)) erro
 
 	log.Printf("test-server: serving %s at %s", root, url)
 	log.Printf("test-server: follow-symlinks=%t", cfg.followSymlinks)
+	if cfg.noLivereload {
+		log.Printf("test-server: live reload disabled")
+	} else {
+		log.Printf("test-server: reload-debounce=%s", cfg.reloadDebounce)
+	}
 
 	if !cfg.noOpenBrowser && opener != nil {
 		opener(url)

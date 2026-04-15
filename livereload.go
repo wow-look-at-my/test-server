@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,21 +26,33 @@ const (
 //go:embed livereload_client.js
 var livereloadClientJS string
 
+// reloadEvent is one changed-file notification sent to browser clients:
+// its path relative to the serve root (forward-slash separated) and the
+// fsnotify operation that triggered it (CREATE|WRITE|REMOVE|RENAME|CHMOD,
+// possibly multiple bits joined with "|"). The watcher stringifies the
+// fsnotify.Op before handing events here so this file stays fsnotify-free.
+type reloadEvent struct {
+	Path string `json:"path"`
+	Op   string `json:"op"`
+}
+
 // reloadHub is a fan-out of reload notifications to all connected SSE
-// clients. Broadcasting is non-blocking and coalesces — a client that
-// already has a pending reload doesn't get a second one queued.
+// clients. Each broadcast carries the list of changed files for that
+// debounce window. Sends are non-blocking and coalesce — if a subscriber
+// hasn't drained its pending batch yet, the newer batch replaces it so
+// clients always see the most recent state rather than a stale one.
 type reloadHub struct {
 	mu     sync.Mutex
-	subs   map[chan struct{}]struct{}
+	subs   map[chan []reloadEvent]struct{}
 	closed atomic.Bool
 }
 
 func newReloadHub() *reloadHub {
-	return &reloadHub{subs: make(map[chan struct{}]struct{})}
+	return &reloadHub{subs: make(map[chan []reloadEvent]struct{})}
 }
 
-func (h *reloadHub) subscribe() chan struct{} {
-	ch := make(chan struct{}, 1)
+func (h *reloadHub) subscribe() chan []reloadEvent {
+	ch := make(chan []reloadEvent, 1)
 	h.mu.Lock()
 	if !h.closed.Load() {
 		h.subs[ch] = struct{}{}
@@ -50,20 +63,26 @@ func (h *reloadHub) subscribe() chan struct{} {
 	return ch
 }
 
-func (h *reloadHub) unsubscribe(ch chan struct{}) {
+func (h *reloadHub) unsubscribe(ch chan []reloadEvent) {
 	h.mu.Lock()
 	delete(h.subs, ch)
 	h.mu.Unlock()
 }
 
-func (h *reloadHub) broadcast() {
+func (h *reloadHub) broadcast(changes []reloadEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch := range h.subs {
+		// Drain any stale pending batch first, then send the latest.
+		// Buffer is 1, so this keeps the newest changes instead of
+		// dropping them on the floor.
 		select {
-		case ch <- struct{}{}:
+		case <-ch:
 		default:
-			// Already has a pending reload — coalesce.
+		}
+		select {
+		case ch <- changes:
+		default:
 		}
 	}
 }
@@ -110,11 +129,11 @@ func (s *server) handleLivereload(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-ch:
+		case changes, ok := <-ch:
 			if !ok {
 				return
 			}
-			if _, err := io.WriteString(w, "data: reload\n\n"); err != nil {
+			if _, err := io.WriteString(w, "data: "+encodeReloadPayload(changes)+"\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -125,6 +144,26 @@ func (s *server) handleLivereload(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// encodeReloadPayload returns the SSE `data:` body for a reload batch. The
+// wire format is `{"changes":[{"path":"...","op":"..."},...]}` — always an
+// object with a `changes` array, even when empty, so the client parser
+// doesn't have to special-case anything.
+func encodeReloadPayload(changes []reloadEvent) string {
+	if changes == nil {
+		changes = []reloadEvent{}
+	}
+	b, err := json.Marshal(struct {
+		Changes []reloadEvent `json:"changes"`
+	}{changes})
+	if err != nil {
+		// json.Marshal on these fixed types cannot fail in practice,
+		// but if it ever does, fall back to a minimal valid payload so
+		// the client still reloads.
+		return `{"changes":[]}`
+	}
+	return string(b)
 }
 
 // htmlInjectingWriter buffers the body of HTML responses and injects the
