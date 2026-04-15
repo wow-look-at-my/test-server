@@ -68,7 +68,7 @@ test-server
 | Command              | Description                                                    |
 |----------------------|----------------------------------------------------------------|
 | `update`             | Update the binary to the latest GitHub release.                |
-| `install [path]`     | Install a release to a path.                                   |
+| `install [path]`     | Install a release to a path (default: `$HOME/.local/bin/test-server`). |
 
 Both commands accept `--version` to target a specific release instead of latest.
 
