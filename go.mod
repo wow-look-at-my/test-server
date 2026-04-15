@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/spf13/cobra v1.10.2
-	github.com/wow-look-at-my/go-selfupdate-mini v0.0.0-20260401034100-cdb9522d5ea6
+	github.com/wow-look-at-my/go-selfupdate-mini v0.0.0-20260415044040-91701f1a439b
 	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
 )
 
