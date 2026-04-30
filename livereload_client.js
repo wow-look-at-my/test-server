@@ -2,6 +2,7 @@
 	try {
 		var es = new EventSource("/__livereload");
 		es.onmessage = function (e) {
+			es.close();
 			try {
 				var msg = JSON.parse(e.data);
 				if (msg && msg.changes) {
