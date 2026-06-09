@@ -9,19 +9,19 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestShouldIgnoreEvent(t *testing.T) {
 	cases := map[string]bool{
-		"/tmp/foo.txt~":	true,
-		"/tmp/.#foo.txt":	true,
-		"/tmp/foo.swp":		true,
-		"/tmp/foo.swx":		true,
-		"/tmp/4913":		true,
-		"/tmp/foo.txt":		false,
-		"/tmp/sub/foo.txt":	false,
+		"/tmp/foo.txt~":    true,
+		"/tmp/.#foo.txt":   true,
+		"/tmp/foo.swp":     true,
+		"/tmp/foo.swx":     true,
+		"/tmp/4913":        true,
+		"/tmp/foo.txt":     false,
+		"/tmp/sub/foo.txt": false,
 	}
 	for p, want := range cases {
 		got := shouldIgnoreEvent(p)
@@ -43,7 +43,7 @@ func TestWalkDirsSkipsSymlinksByDefault(t *testing.T) {
 	require.NoError(t, os.Symlink(outside, filepath.Join(root, "linked")))
 
 	var got []string
-	require.NoError(t, walkDirs(root, false, func(dir string,) {
+	require.NoError(t, walkDirs(root, false, func(dir string) {
 		rel, _ := filepath.Rel(root, dir)
 		got = append(got, rel)
 
@@ -63,7 +63,7 @@ func TestWalkDirsFollowsSymlinks(t *testing.T) {
 	require.NoError(t, os.Symlink(outside, filepath.Join(root, "linked")))
 
 	var got []string
-	require.NoError(t, walkDirs(root, true, func(dir string,) {
+	require.NoError(t, walkDirs(root, true, func(dir string) {
 		rel, _ := filepath.Rel(root, dir)
 		got = append(got, rel)
 
@@ -188,13 +188,13 @@ func TestWatchTreeTrailingEdgeDebounce(t *testing.T) {
 
 func TestOpString(t *testing.T) {
 	cases := map[fsnotify.Op]string{
-		fsnotify.Create:                 "CREATE",
-		fsnotify.Write:                  "WRITE",
-		fsnotify.Remove:                 "REMOVE",
-		fsnotify.Rename:                 "RENAME",
-		fsnotify.Chmod:                  "CHMOD",
+		fsnotify.Create:                  "CREATE",
+		fsnotify.Write:                   "WRITE",
+		fsnotify.Remove:                  "REMOVE",
+		fsnotify.Rename:                  "RENAME",
+		fsnotify.Chmod:                   "CHMOD",
 		fsnotify.Create | fsnotify.Write: "CREATE|WRITE",
-		0:                               "UNKNOWN",
+		0:                                "UNKNOWN",
 	}
 	for op, want := range cases {
 		assert.Equal(t, want, opString(op))

@@ -3,27 +3,27 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestIsHTMLContentType(t *testing.T) {
 	cases := map[string]bool{
-		"text/html":			true,
-		"text/html; charset=utf-8":	true,
-		"TEXT/HTML":			true,
-		"  text/html  ":		true,
-		"application/json":		false,
-		"":				false,
-		"text/plain":			false,
-		"text/html-ish":		true,	// has prefix; acceptable
-		"application/xhtml+xml":	false,
+		"text/html":                true,
+		"text/html; charset=utf-8": true,
+		"TEXT/HTML":                true,
+		"  text/html  ":            true,
+		"application/json":         false,
+		"":                         false,
+		"text/plain":               false,
+		"text/html-ish":            true, // has prefix; acceptable
+		"application/xhtml+xml":    false,
 	}
 	for in, want := range cases {
 		got := isHTMLContentType(in)
@@ -34,8 +34,8 @@ func TestIsHTMLContentType(t *testing.T) {
 
 func TestIndexFoldASCII(t *testing.T) {
 	cases := []struct {
-		s, sub	string
-		want	int
+		s, sub string
+		want   int
 	}{
 		{"hello WORLD", "world", 6},
 		{"HELLO", "hello", 0},
@@ -156,7 +156,7 @@ func TestHTMLInjectingWriterHTML(t *testing.T) {
 	rec := httptest.NewRecorder()
 	iw := &htmlInjectingWriter{ResponseWriter: rec}
 	iw.Header().Set("Content-Type", "text/html; charset=utf-8")
-	iw.Header().Set("Content-Length", "999")	// should get wiped
+	iw.Header().Set("Content-Length", "999") // should get wiped
 	iw.WriteHeader(http.StatusOK)
 	_, _ = iw.Write([]byte("<html><body>hi</body></html>"))
 	require.NoError(t, iw.finish())

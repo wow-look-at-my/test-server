@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRootCmdFlagsDefaults(t *testing.T) {
@@ -43,6 +43,13 @@ func TestRegisterMimeTypes(t *testing.T) {
 	registerMimeTypes()
 	assert.Equal(t, "application/wasm", mime.TypeByExtension(".wasm"))
 	assert.Contains(t, mime.TypeByExtension(".mjs"), "javascript")
+
+	// TypeScript sources must be served as JavaScript, overriding whatever
+	// the OS mime table maps them to (e.g. video/mp2t for .ts), or browsers
+	// refuse to load them as modules.
+	for _, ext := range []string{".ts", ".tsx", ".mts", ".cts"} {
+		assert.Contains(t, mime.TypeByExtension(ext), "javascript", "extension %s", ext)
+	}
 }
 
 func TestRunServesAndShutsDown(t *testing.T) {

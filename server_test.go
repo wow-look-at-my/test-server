@@ -8,24 +8,24 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetCommonHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
 	setCommonHeaders(rec)
 	want := map[string]string{
-		"Cross-Origin-Opener-Policy":		"same-origin",
-		"Cross-Origin-Embedder-Policy":		"require-corp",
-		"Cross-Origin-Resource-Policy":		"cross-origin",
-		"Access-Control-Allow-Origin":		"*",
-		"Access-Control-Allow-Methods":		"*",
-		"Access-Control-Allow-Headers":		"*",
-		"Access-Control-Allow-Private-Network":	"true",
-		"Cache-Control":			"no-store, must-revalidate",
-		"Pragma":				"no-cache",
-		"Expires":				"0",
+		"Cross-Origin-Opener-Policy":           "same-origin",
+		"Cross-Origin-Embedder-Policy":         "require-corp",
+		"Cross-Origin-Resource-Policy":         "cross-origin",
+		"Access-Control-Allow-Origin":          "*",
+		"Access-Control-Allow-Methods":         "*",
+		"Access-Control-Allow-Headers":         "*",
+		"Access-Control-Allow-Private-Network": "true",
+		"Cache-Control":                        "no-store, must-revalidate",
+		"Pragma":                               "no-cache",
+		"Expires":                              "0",
 	}
 	for k, v := range want {
 		got := rec.Header().Get(k)
@@ -83,6 +83,30 @@ func TestServerServesFile(t *testing.T) {
 	resp.Body.Close()
 	assert.Contains(t, string(body), "EventSource")
 
+}
+
+func TestServerServesTypeScriptAsJavaScript(t *testing.T) {
+	// registerMimeTypes is what teaches the process that .ts is JavaScript;
+	// the real binary calls it on startup, so the test must too.
+	registerMimeTypes()
+
+	dir := t.TempDir()
+	for _, name := range []string{"app.ts", "comp.tsx", "mod.mts", "common.cts"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("export const x = 1\n"), 0o644))
+	}
+
+	hub := newReloadHub()
+	srv := newServer(dir, false, hub, true)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	for _, name := range []string{"app.ts", "comp.tsx", "mod.mts", "common.cts"} {
+		resp, err := http.Get(ts.URL + "/" + name)
+		require.NoError(t, err)
+		resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
+		assert.Contains(t, resp.Header.Get("Content-Type"), "javascript", name)
+	}
 }
 
 func TestServerFollowSymlinksOff(t *testing.T) {
