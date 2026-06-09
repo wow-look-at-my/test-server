@@ -26,6 +26,7 @@ type config struct {
 	noOpenBrowser  bool
 	reloadDebounce time.Duration
 	noLivereload   bool
+	noTranspile    bool
 }
 
 // rootCfg is the shared config populated by cobra flag parsing. It's a
@@ -55,6 +56,7 @@ func init() {
 	f.BoolVar(&rootCfg.noOpenBrowser, "no-open-browser", false, "do not open a browser window on startup")
 	f.DurationVar(&rootCfg.reloadDebounce, "reload-debounce", 250*time.Millisecond, "debounce window for live-reload file-change batching (trailing-edge)")
 	f.BoolVar(&rootCfg.noLivereload, "no-livereload", false, "disable live reload (no watcher, no script injection, 404 /__livereload)")
+	f.BoolVar(&rootCfg.noTranspile, "no-transpile", false, "disable on-the-fly TypeScript->JavaScript transpilation (serve .ts/.tsx/.mts/.cts raw)")
 }
 
 func runRootCmd(cmd *cobra.Command, _ []string) error {
@@ -101,7 +103,7 @@ func registerMimeTypes() {
 // launching without actually spawning a process.
 func run(ctx context.Context, cfg config, root string, opener func(string)) error {
 	hub := newReloadHub()
-	srv := newServer(root, cfg.followSymlinks, hub, !cfg.noLivereload)
+	srv := newServer(root, cfg.followSymlinks, hub, !cfg.noLivereload, !cfg.noTranspile)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.host, cfg.port))
 	if err != nil {
@@ -136,6 +138,11 @@ func run(ctx context.Context, cfg config, root string, opener func(string)) erro
 
 	log.Printf("test-server: serving %s at %s", root, url)
 	log.Printf("test-server: follow-symlinks=%t", cfg.followSymlinks)
+	if cfg.noTranspile {
+		log.Printf("test-server: TypeScript transpilation disabled (serving .ts raw)")
+	} else {
+		log.Printf("test-server: transpiling .ts/.tsx/.mts/.cts -> JavaScript")
+	}
 	if cfg.noLivereload {
 		log.Printf("test-server: live reload disabled")
 	} else {

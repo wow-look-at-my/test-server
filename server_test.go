@@ -36,7 +36,7 @@ func TestSetCommonHeaders(t *testing.T) {
 
 func TestServerOptionsPreflight(t *testing.T) {
 	hub := newReloadHub()
-	srv := newServer(t.TempDir(), false, hub, true)
+	srv := newServer(t.TempDir(), false, hub, true, true)
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -53,7 +53,7 @@ func TestServerServesFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "plain.txt"), []byte("not html"), 0o644))
 
 	hub := newReloadHub()
-	srv := newServer(dir, false, hub, true)
+	srv := newServer(dir, false, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -85,27 +85,36 @@ func TestServerServesFile(t *testing.T) {
 
 }
 
-func TestServerServesTypeScriptAsJavaScript(t *testing.T) {
-	// registerMimeTypes is what teaches the process that .ts is JavaScript;
-	// the real binary calls it on startup, so the test must too.
-	registerMimeTypes()
-
+func TestServerTranspilesTypeScript(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"app.ts", "comp.tsx", "mod.mts", "common.cts"} {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("export const x = 1\n"), 0o644))
+	// Real TypeScript: a type annotation and an interface that must not
+	// survive into the served JavaScript.
+	src := "interface P { n: number }\n" +
+		"export const greet = (p: P): string => `hi ${p.n}`\n"
+	for _, name := range []string{"app.ts", "mod.mts", "common.cts"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
 	}
 
 	hub := newReloadHub()
-	srv := newServer(dir, false, hub, true)
+	srv := newServer(dir, false, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	for _, name := range []string{"app.ts", "comp.tsx", "mod.mts", "common.cts"} {
+	for _, name := range []string{"app.ts", "mod.mts", "common.cts"} {
 		resp, err := http.Get(ts.URL + "/" + name)
 		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		js := string(body)
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
 		assert.Contains(t, resp.Header.Get("Content-Type"), "javascript", name)
+		// Types are stripped, runtime code survives.
+		assert.NotContains(t, js, "interface", name)
+		assert.NotContains(t, js, ": P", name)
+		assert.Contains(t, js, "greet", name)
+		// Inline source map is present for devtools.
+		assert.Contains(t, js, "sourceMappingURL=data:", name)
 	}
 }
 
@@ -121,7 +130,7 @@ func TestServerFollowSymlinksOff(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), false, hub, true)
+	srv := newServer(mustEval(t, dir), false, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -147,7 +156,7 @@ func TestServerFollowSymlinksOn(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), true, hub, true)
+	srv := newServer(mustEval(t, dir), true, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -165,7 +174,7 @@ func TestServerLivereloadDisabled(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html><body>hi</body></html>"), 0o644))
 
 	hub := newReloadHub()
-	srv := newServer(dir, false, hub, false)
+	srv := newServer(dir, false, hub, false, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

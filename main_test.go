@@ -26,6 +26,7 @@ func TestRootCmdFlagsDefaults(t *testing.T) {
 	assert.Equal(t, "false", f.Lookup("no-open-browser").DefValue)
 	assert.Equal(t, "250ms", f.Lookup("reload-debounce").DefValue)
 	assert.Equal(t, "false", f.Lookup("no-livereload").DefValue)
+	assert.Equal(t, "false", f.Lookup("no-transpile").DefValue)
 }
 
 func TestRootCmdBadFlag(t *testing.T) {
