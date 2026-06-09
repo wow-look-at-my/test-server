@@ -229,8 +229,9 @@ func isHTMLContentType(ct string) bool {
 func injectLivereload(body []byte) []byte {
 	tag := []byte(`<script src="` + livereloadJSPath + `"></script>`)
 	if idx := indexFoldASCII(body, []byte("</body>")); idx >= 0 {
-		out := make([]byte, 0, len(body)+len(tag))
-		out = append(out, body[:idx]...)
+		// Build via append (no pre-sized make with a summed length, which a
+		// static analyzer flags as a possible allocation-size overflow).
+		out := append([]byte{}, body[:idx]...)
 		out = append(out, tag...)
 		out = append(out, body[idx:]...)
 		return out

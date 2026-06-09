@@ -92,6 +92,21 @@ func TestTranspileMissingFileFallsThroughTo404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status)
 }
 
+func TestTranspileRejectsPathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	hub := newReloadHub()
+	srv := newServer(dir, false, hub, true, true)
+
+	// A raw request can carry a ".." path that an http.Client would otherwise
+	// collapse. It must be canonicalized to within root (here: a nonexistent
+	// file) and never read outside it.
+	req := httptest.NewRequest(http.MethodGet, "http://x/", nil)
+	req.URL.Path = "/../../etc/passwd.ts"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestTranspileRespectsSymlinkContainment(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()

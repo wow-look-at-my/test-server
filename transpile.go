@@ -39,7 +39,22 @@ func (s *server) serveTranspiledTS(w http.ResponseWriter, r *http.Request) bool 
 		return false
 	}
 
-	f, err := s.fs.Open(r.URL.Path)
+	// Canonicalize the request path before any filesystem access. path.Clean
+	// roots the path at "/" and collapses ".." segments -- exactly what
+	// http.FileServer does internally before opening a file -- so a
+	// user-controlled URL can't be used to read outside the serve root. The
+	// residual ".." check is defense in depth (path.Clean already removes
+	// them) and the barrier that keeps untrusted input out of the filesystem.
+	upath := r.URL.Path
+	if !strings.HasPrefix(upath, "/") {
+		upath = "/" + upath
+	}
+	upath = path.Clean(upath)
+	if upath == "/" || strings.Contains(upath, "..") {
+		return false
+	}
+
+	f, err := s.fs.Open(upath)
 	if err != nil {
 		// Not found, or outside root with --follow-symlinks off. Fall through
 		// so the file server produces the same 404 it always would.
@@ -60,7 +75,7 @@ func (s *server) serveTranspiledTS(w http.ResponseWriter, r *http.Request) bool 
 
 	result := api.Transform(string(src), api.TransformOptions{
 		Loader:     loader,
-		Sourcefile: path.Base(r.URL.Path),
+		Sourcefile: path.Base(upath),
 		Sourcemap:  api.SourceMapInline,
 	})
 
@@ -70,7 +85,7 @@ func (s *server) serveTranspiledTS(w http.ResponseWriter, r *http.Request) bool 
 		// Surface compile errors in the browser console (and as a thrown
 		// error) instead of serving silently-broken output. The response is
 		// still a valid JS module so the browser actually runs it.
-		_, _ = w.Write(transpileErrorJS(r.URL.Path, result.Errors))
+		_, _ = w.Write(transpileErrorJS(upath, result.Errors))
 		return true
 	}
 
