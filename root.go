@@ -81,6 +81,18 @@ func registerMimeTypes() {
 	_ = mime.AddExtensionType(".wasm", "application/wasm")
 	_ = mime.AddExtensionType(".mjs", "text/javascript; charset=utf-8")
 	_ = mime.AddExtensionType(".map", "application/json; charset=utf-8")
+
+	// TypeScript sources. The OS mime table maps these to something useless
+	// for the web (.ts -> video/mp2t or, on some systems,
+	// text/vnd.trolltech.linguist; .mts -> model/vnd.mts; .tsx/.cts unknown),
+	// so browsers reject them with a strict MIME-type error when they're
+	// loaded as <script type="module">. Serve the whole TypeScript family as
+	// JavaScript so module loading works. AddExtensionType runs after the OS
+	// table is loaded, so these explicit entries win.
+	_ = mime.AddExtensionType(".ts", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".tsx", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".mts", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".cts", "text/javascript; charset=utf-8")
 }
 
 // run starts the file server, watcher, and optionally the browser. It

@@ -22,7 +22,10 @@ resolution.
   actually refresh.
 - **Symlink containment** — by default, symlinks that resolve outside the
   cwd return `404`. Pass `--follow-symlinks` to allow them.
-- **Correct MIME types** for `.wasm`, `.mjs`, and `.map`.
+- **Correct MIME types** for `.wasm`, `.mjs`, `.map`, and the TypeScript
+  family (`.ts`, `.tsx`, `.mts`, `.cts` are served as `text/javascript` so
+  browsers accept them as ES modules instead of rejecting them as
+  `video/mp2t`).
 - Opens your default browser on startup (disable with
   `--no-open-browser`).
 - Picks a free port by default (override with `--port`).

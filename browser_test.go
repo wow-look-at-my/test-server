@@ -1,14 +1,14 @@
 package main
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
-	"github.com/wow-look-at-my/testify/assert"
 )
 
 func TestBrowserCommand(t *testing.T) {
 	cases := []struct {
-		goos	string
-		want	string
+		goos string
+		want string
 	}{
 		{"darwin", "open"},
 		{"windows", "rundll32"},
