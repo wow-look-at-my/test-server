@@ -14,11 +14,13 @@ type server struct {
 	root              string
 	followSymlinks    bool
 	livereloadEnabled bool
+	transpileEnabled  bool
 	hub               *reloadHub
+	fs                http.FileSystem
 	fileServer        http.Handler
 }
 
-func newServer(root string, followSymlinks bool, hub *reloadHub, livereloadEnabled bool) *server {
+func newServer(root string, followSymlinks bool, hub *reloadHub, livereloadEnabled, transpileEnabled bool) *server {
 	var fs http.FileSystem = http.Dir(root)
 	if !followSymlinks {
 		fs = &safeFS{root: root, inner: http.Dir(root)}
@@ -27,7 +29,9 @@ func newServer(root string, followSymlinks bool, hub *reloadHub, livereloadEnabl
 		root:              root,
 		followSymlinks:    followSymlinks,
 		livereloadEnabled: livereloadEnabled,
+		transpileEnabled:  transpileEnabled,
 		hub:               hub,
+		fs:                fs,
 		fileServer:        http.FileServer(fs),
 	}
 }
@@ -50,7 +54,19 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, livereloadClientJS)
 			return
 		}
+	}
 
+	// Transpile TypeScript sources to JavaScript on the fly. serveTranspiledTS
+	// returns true if it handled the request (the URL names an existing
+	// TS-family file); otherwise we fall through to the static file server so
+	// non-TS paths, directories, and 404s behave exactly as before.
+	if s.transpileEnabled && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if s.serveTranspiledTS(w, r) {
+			return
+		}
+	}
+
+	if s.livereloadEnabled {
 		// Wrap the ResponseWriter so HTML responses get the livereload
 		// script tag injected before </body>.
 		iw := &htmlInjectingWriter{ResponseWriter: w}

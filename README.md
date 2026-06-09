@@ -9,6 +9,15 @@ resolution.
 ## Features
 
 - Serves the current working directory (recursively) over plain HTTP.
+- **TypeScript transpilation** — requests for `.ts`, `.tsx`, `.mts`, and
+  `.cts` are transpiled to JavaScript on the fly (via [esbuild]), served as
+  `text/javascript` with an inline source map. So
+  `<script type="module" src="app.ts">` just works — no build step, no
+  `tsc`, no `node_modules`. Disable with `--no-transpile` to serve the raw
+  `.ts` bytes instead. Import specifiers are left untouched, so
+  `import './dep.ts'` resolves to `/dep.ts`, which is transpiled the same
+  way. Compile errors are surfaced in the browser console (the response is a
+  JS module that logs and throws the error).
 - **Live reload** — any file change under the cwd triggers a browser
   refresh. Implemented via Server-Sent Events + a tiny injected `<script>`
   tag, so it works in any HTML page without you touching your code.
@@ -22,10 +31,8 @@ resolution.
   actually refresh.
 - **Symlink containment** — by default, symlinks that resolve outside the
   cwd return `404`. Pass `--follow-symlinks` to allow them.
-- **Correct MIME types** for `.wasm`, `.mjs`, `.map`, and the TypeScript
-  family (`.ts`, `.tsx`, `.mts`, `.cts` are served as `text/javascript` so
-  browsers accept them as ES modules instead of rejecting them as
-  `video/mp2t`).
+- **Correct MIME types** for `.wasm`, `.mjs`, and `.map` (and `.ts` family
+  when served raw under `--no-transpile`).
 - Opens your default browser on startup (disable with
   `--no-open-browser`).
 - Picks a free port by default (override with `--port`).
@@ -64,6 +71,7 @@ test-server
 | `--no-open-browser`    | `false`     | Don't open a browser window on startup.                                  |
 | `--reload-debounce D`  | `250ms`     | Trailing-edge debounce window for live-reload file-change batching.      |
 | `--no-livereload`      | `false`     | Disable live reload (no watcher, no script injection, 404 `/__livereload`). |
+| `--no-transpile`       | `false`     | Disable on-the-fly TypeScript transpilation (serve `.ts/.tsx/.mts/.cts` raw). |
 | `--version`            |             | Print the version and exit.                                              |
 
 ### Subcommands
@@ -117,9 +125,12 @@ The resulting binary lands in `./build/test-server`.
 ```
 main.go         flag parsing, run() entry point
 server.go       top-level handler, headers, routing
+transpile.go    on-the-fly TypeScript -> JavaScript (esbuild)
 livereload.go   SSE hub, HTML injection, reloadHub
 safefs.go       symlink-containment http.FileSystem
 watcher.go      recursive fsnotify tree + debounce
 browser.go      per-OS browser launcher
 selfupdate.go   self-update and install subcommands
 ```
+
+[esbuild]: https://github.com/evanw/esbuild
