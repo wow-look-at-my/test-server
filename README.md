@@ -14,7 +14,9 @@ resolution.
   tag, so it works in any HTML page without you touching your code.
 - **Cross-origin isolation headers** set on every response:
   - `Cross-Origin-Opener-Policy: same-origin`
-  - `Cross-Origin-Embedder-Policy: require-corp`
+  - `Cross-Origin-Embedder-Policy: credentialless` (unlocks
+    `SharedArrayBuffer` while still loading cross-origin assets such as CDN
+    stylesheets and scripts; `require-corp` would block them)
   - `Cross-Origin-Resource-Policy: cross-origin`
 - **Permissive CORS** for local testing (`Access-Control-Allow-Origin: *`,
   etc.) plus `Access-Control-Allow-Private-Network: true`.
@@ -26,22 +28,15 @@ resolution.
 - Opens your default browser on startup (disable with
   `--no-open-browser`).
 - Picks a free port by default (override with `--port`).
-- **Self-update** — `test-server update` upgrades the binary in-place
-  from GitHub releases. `test-server install` downloads a release to a
-  given path.
 - Graceful shutdown on `Ctrl-C`.
 
 ## Install
 
-```
-go install github.com/wow-look-at-my/test-server@latest
-```
-
-Or build from source:
+Releases are published by CI (the `wow-look-at-my/go-toolchain` GitHub
+Action), which also keeps the Homebrew tap current:
 
 ```
-go-toolchain
-./build/test-server
+brew install pazer/build/test-server
 ```
 
 ## Usage
@@ -60,15 +55,6 @@ test-server
 | `--follow-symlinks`  | `false`     | Allow serving files reached via symlinks escaping the cwd. |
 | `--no-open-browser`  | `false`     | Don't open a browser window on startup.                    |
 | `--version`          |             | Print the version and exit.                                |
-
-### Subcommands
-
-| Command              | Description                                                    |
-|----------------------|----------------------------------------------------------------|
-| `update`             | Update the binary to the latest GitHub release.                |
-| `install [path]`     | Install a release to a path.                                   |
-
-Both commands accept `--version` to target a specific release instead of latest.
 
 ### Live reload
 
@@ -101,5 +87,4 @@ livereload.go   SSE hub, HTML injection, reloadHub
 safefs.go       symlink-containment http.FileSystem
 watcher.go      recursive fsnotify tree + debounce
 browser.go      per-OS browser launcher
-selfupdate.go   self-update and install subcommands
 ```
