@@ -8,24 +8,24 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetCommonHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
 	setCommonHeaders(rec)
 	want := map[string]string{
-		"Cross-Origin-Opener-Policy":		"same-origin",
-		"Cross-Origin-Embedder-Policy":		"require-corp",
-		"Cross-Origin-Resource-Policy":		"cross-origin",
-		"Access-Control-Allow-Origin":		"*",
-		"Access-Control-Allow-Methods":		"*",
-		"Access-Control-Allow-Headers":		"*",
-		"Access-Control-Allow-Private-Network":	"true",
-		"Cache-Control":			"no-store, must-revalidate",
-		"Pragma":				"no-cache",
-		"Expires":				"0",
+		"Cross-Origin-Opener-Policy":           "same-origin",
+		"Cross-Origin-Embedder-Policy":         "credentialless",
+		"Cross-Origin-Resource-Policy":         "cross-origin",
+		"Access-Control-Allow-Origin":          "*",
+		"Access-Control-Allow-Methods":         "*",
+		"Access-Control-Allow-Headers":         "*",
+		"Access-Control-Allow-Private-Network": "true",
+		"Cache-Control":                        "no-store, must-revalidate",
+		"Pragma":                               "no-cache",
+		"Expires":                              "0",
 	}
 	for k, v := range want {
 		got := rec.Header().Get(k)

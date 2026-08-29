@@ -63,7 +63,11 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func setCommonHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Cross-Origin-Opener-Policy", "same-origin")
-	h.Set("Cross-Origin-Embedder-Policy", "require-corp")
+	// credentialless keeps the cross-origin-isolation unlock while letting
+	// no-credential cross-origin subresources (CDN stylesheets, scripts, wasm)
+	// load; require-corp blocks any of them whose server does not send CORP.
+	h.Set("Cross-Origin-Embedder-Policy", "credentialless")
+	h.Set("Cross-Origin-Resource-Policy", "cross-origin")
 	h.Set("Cross-Origin-Resource-Policy", "cross-origin")
 	h.Set("Access-Control-Allow-Origin", "*")
 	h.Set("Access-Control-Allow-Methods", "*")
