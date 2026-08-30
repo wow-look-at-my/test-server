@@ -24,6 +24,9 @@ func TestRootCmdFlagsDefaults(t *testing.T) {
 	assert.Equal(t, "127.0.0.1", f.Lookup("host").DefValue)
 	assert.Equal(t, "false", f.Lookup("follow-symlinks").DefValue)
 	assert.Equal(t, "false", f.Lookup("no-open-browser").DefValue)
+	assert.Equal(t, "250ms", f.Lookup("reload-debounce").DefValue)
+	assert.Equal(t, "false", f.Lookup("no-livereload").DefValue)
+	assert.Equal(t, "false", f.Lookup("no-transpile").DefValue)
 }
 
 func TestRootCmdBadFlag(t *testing.T) {
@@ -41,6 +44,13 @@ func TestRegisterMimeTypes(t *testing.T) {
 	registerMimeTypes()
 	assert.Equal(t, "application/wasm", mime.TypeByExtension(".wasm"))
 	assert.Contains(t, mime.TypeByExtension(".mjs"), "javascript")
+
+	// TypeScript sources must be served as JavaScript, overriding whatever
+	// the OS mime table maps them to (e.g. video/mp2t for .ts), or browsers
+	// refuse to load them as modules.
+	for _, ext := range []string{".ts", ".tsx", ".mts", ".cts"} {
+		assert.Contains(t, mime.TypeByExtension(ext), "javascript", "extension %s", ext)
+	}
 }
 
 func TestRunServesAndShutsDown(t *testing.T) {

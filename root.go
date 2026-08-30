@@ -24,6 +24,9 @@ type config struct {
 	port           int
 	followSymlinks bool
 	noOpenBrowser  bool
+	reloadDebounce time.Duration
+	noLivereload   bool
+	noTranspile    bool
 }
 
 // rootCfg is the shared config populated by cobra flag parsing. It's a
@@ -46,12 +49,14 @@ cross-origin-isolation headers set. Intended for local web development.`,
 }
 
 func init() {
-	rootCmd.Version = version
 	f := rootCmd.Flags()
 	f.IntVar(&rootCfg.port, "port", 0, "TCP port to bind (0 = pick a free one)")
 	f.StringVar(&rootCfg.host, "host", "127.0.0.1", "host to bind")
 	f.BoolVar(&rootCfg.followSymlinks, "follow-symlinks", false, "allow serving files reached via symlinks that escape the cwd")
 	f.BoolVar(&rootCfg.noOpenBrowser, "no-open-browser", false, "do not open a browser window on startup")
+	f.DurationVar(&rootCfg.reloadDebounce, "reload-debounce", 250*time.Millisecond, "debounce window for live-reload file-change batching (trailing-edge)")
+	f.BoolVar(&rootCfg.noLivereload, "no-livereload", false, "disable live reload (no watcher, no script injection, 404 /__livereload)")
+	f.BoolVar(&rootCfg.noTranspile, "no-transpile", false, "disable on-the-fly TypeScript->JavaScript transpilation (serve .ts/.tsx/.mts/.cts raw)")
 }
 
 func runRootCmd(cmd *cobra.Command, _ []string) error {
@@ -78,6 +83,18 @@ func registerMimeTypes() {
 	_ = mime.AddExtensionType(".wasm", "application/wasm")
 	_ = mime.AddExtensionType(".mjs", "text/javascript; charset=utf-8")
 	_ = mime.AddExtensionType(".map", "application/json; charset=utf-8")
+
+	// TypeScript sources. The OS mime table maps these to something useless
+	// for the web (.ts -> video/mp2t or, on some systems,
+	// text/vnd.trolltech.linguist; .mts -> model/vnd.mts; .tsx/.cts unknown),
+	// so browsers reject them with a strict MIME-type error when they're
+	// loaded as <script type="module">. Serve the whole TypeScript family as
+	// JavaScript so module loading works. AddExtensionType runs after the OS
+	// table is loaded, so these explicit entries win.
+	_ = mime.AddExtensionType(".ts", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".tsx", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".mts", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".cts", "text/javascript; charset=utf-8")
 }
 
 // run starts the file server, watcher, and optionally the browser. It
@@ -86,7 +103,7 @@ func registerMimeTypes() {
 // launching without actually spawning a process.
 func run(ctx context.Context, cfg config, root string, opener func(string)) error {
 	hub := newReloadHub()
-	srv := newServer(root, cfg.followSymlinks, hub)
+	srv := newServer(root, cfg.followSymlinks, hub, !cfg.noLivereload, !cfg.noTranspile)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.host, cfg.port))
 	if err != nil {
@@ -101,12 +118,18 @@ func run(ctx context.Context, cfg config, root string, opener func(string)) erro
 	}
 
 	watcherDone := make(chan struct{})
-	go func() {
-		defer close(watcherDone)
-		if err := watchTree(ctx, root, cfg.followSymlinks, hub); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("watcher: %v", err)
-		}
-	}()
+	if cfg.noLivereload {
+		// Skip the watcher entirely. Close the channel so the
+		// shutdown-path <-watcherDone below doesn't deadlock.
+		close(watcherDone)
+	} else {
+		go func() {
+			defer close(watcherDone)
+			if err := watchTree(ctx, root, cfg.followSymlinks, cfg.reloadDebounce, hub); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("watcher: %v", err)
+			}
+		}()
+	}
 
 	serverDone := make(chan error, 1)
 	go func() {
@@ -115,6 +138,16 @@ func run(ctx context.Context, cfg config, root string, opener func(string)) erro
 
 	log.Printf("test-server: serving %s at %s", root, url)
 	log.Printf("test-server: follow-symlinks=%t", cfg.followSymlinks)
+	if cfg.noTranspile {
+		log.Printf("test-server: TypeScript transpilation disabled (serving .ts raw)")
+	} else {
+		log.Printf("test-server: transpiling .ts/.tsx/.mts/.cts -> JavaScript")
+	}
+	if cfg.noLivereload {
+		log.Printf("test-server: live reload disabled")
+	} else {
+		log.Printf("test-server: reload-debounce=%s", cfg.reloadDebounce)
+	}
 
 	if !cfg.noOpenBrowser && opener != nil {
 		opener(url)

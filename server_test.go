@@ -17,8 +17,7 @@ func TestSetCommonHeaders(t *testing.T) {
 	setCommonHeaders(rec)
 	want := map[string]string{
 		"Cross-Origin-Opener-Policy":           "same-origin",
-		"Cross-Origin-Embedder-Policy":         "credentialless",
-		"Cross-Origin-Resource-Policy":         "cross-origin",
+		"Cross-Origin-Embedder-Policy":         "credentialless",		"Cross-Origin-Resource-Policy":         "cross-origin",
 		"Access-Control-Allow-Origin":          "*",
 		"Access-Control-Allow-Methods":         "*",
 		"Access-Control-Allow-Headers":         "*",
@@ -36,7 +35,7 @@ func TestSetCommonHeaders(t *testing.T) {
 
 func TestServerOptionsPreflight(t *testing.T) {
 	hub := newReloadHub()
-	srv := newServer(t.TempDir(), false, hub)
+	srv := newServer(t.TempDir(), false, hub, true, true)
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -53,7 +52,7 @@ func TestServerServesFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "plain.txt"), []byte("not html"), 0o644))
 
 	hub := newReloadHub()
-	srv := newServer(dir, false, hub)
+	srv := newServer(dir, false, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -85,6 +84,39 @@ func TestServerServesFile(t *testing.T) {
 
 }
 
+func TestServerTranspilesTypeScript(t *testing.T) {
+	dir := t.TempDir()
+	// Real TypeScript: a type annotation and an interface that must not
+	// survive into the served JavaScript.
+	src := "interface P { n: number }\n" +
+		"export const greet = (p: P): string => `hi ${p.n}`\n"
+	for _, name := range []string{"app.ts", "mod.mts", "common.cts"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
+	}
+
+	hub := newReloadHub()
+	srv := newServer(dir, false, hub, true, true)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	for _, name := range []string{"app.ts", "mod.mts", "common.cts"} {
+		resp, err := http.Get(ts.URL + "/" + name)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		js := string(body)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
+		assert.Contains(t, resp.Header.Get("Content-Type"), "javascript", name)
+		// Types are stripped, runtime code survives.
+		assert.NotContains(t, js, "interface", name)
+		assert.NotContains(t, js, ": P", name)
+		assert.Contains(t, js, "greet", name)
+		// Inline source map is present for devtools.
+		assert.Contains(t, js, "sourceMappingURL=data:", name)
+	}
+}
+
 func TestServerFollowSymlinksOff(t *testing.T) {
 	dir := t.TempDir()
 	// File inside root: should be served.
@@ -97,7 +129,7 @@ func TestServerFollowSymlinksOff(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), false, hub)
+	srv := newServer(mustEval(t, dir), false, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -123,7 +155,7 @@ func TestServerFollowSymlinksOn(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "leak")))
 
 	hub := newReloadHub()
-	srv := newServer(mustEval(t, dir), true, hub)
+	srv := newServer(mustEval(t, dir), true, hub, true, true)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -134,6 +166,35 @@ func TestServerFollowSymlinksOn(t *testing.T) {
 	resp.Body.Close()
 	assert.False(t, resp.StatusCode != 200 || string(body) != "ok!")
 
+}
+
+func TestServerLivereloadDisabled(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html><body>hi</body></html>"), 0o644))
+
+	hub := newReloadHub()
+	srv := newServer(dir, false, hub, false, true)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// HTML: should NOT have the livereload script injected.
+	resp, err := http.Get(ts.URL + "/")
+	require.Nil(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotContains(t, string(body), livereloadJSPath)
+
+	// Livereload endpoints should 404 (no such file on disk).
+	resp, err = http.Get(ts.URL + livereloadJSPath)
+	require.Nil(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	resp, err = http.Get(ts.URL + livereloadPath)
+	require.Nil(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 func mustEval(t *testing.T, p string) string {

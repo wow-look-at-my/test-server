@@ -7,25 +7,32 @@ import (
 )
 
 // server is the top-level HTTP handler: it sets cross-origin-isolation and
-// CORS headers on every response, routes the two livereload endpoints, and
-// otherwise delegates to a static file server (wrapped with HTML injection).
+// CORS headers on every response, routes the two livereload endpoints when
+// enabled, and otherwise delegates to a static file server (wrapped with
+// HTML injection when livereload is enabled).
 type server struct {
-	root           string
-	followSymlinks bool
-	hub            *reloadHub
-	fileServer     http.Handler
+	root              string
+	followSymlinks    bool
+	livereloadEnabled bool
+	transpileEnabled  bool
+	hub               *reloadHub
+	fs                http.FileSystem
+	fileServer        http.Handler
 }
 
-func newServer(root string, followSymlinks bool, hub *reloadHub) *server {
+func newServer(root string, followSymlinks bool, hub *reloadHub, livereloadEnabled, transpileEnabled bool) *server {
 	var fs http.FileSystem = http.Dir(root)
 	if !followSymlinks {
 		fs = &safeFS{root: root, inner: http.Dir(root)}
 	}
 	return &server{
-		root:           root,
-		followSymlinks: followSymlinks,
-		hub:            hub,
-		fileServer:     http.FileServer(fs),
+		root:              root,
+		followSymlinks:    followSymlinks,
+		livereloadEnabled: livereloadEnabled,
+		transpileEnabled:  transpileEnabled,
+		hub:               hub,
+		fs:                fs,
+		fileServer:        http.FileServer(fs),
 	}
 }
 
@@ -37,23 +44,43 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch r.URL.Path {
-	case livereloadPath:
-		s.handleLivereload(w, r)
-		return
-	case livereloadJSPath:
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		_, _ = io.WriteString(w, livereloadClientJS)
+	if s.livereloadEnabled {
+		switch r.URL.Path {
+		case livereloadPath:
+			s.handleLivereload(w, r)
+			return
+		case livereloadJSPath:
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			_, _ = io.WriteString(w, livereloadClientJS)
+			return
+		}
+	}
+
+	// Transpile TypeScript sources to JavaScript on the fly. serveTranspiledTS
+	// returns true if it handled the request (the URL names an existing
+	// TS-family file); otherwise we fall through to the static file server so
+	// non-TS paths, directories, and 404s behave exactly as before.
+	if s.transpileEnabled && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if s.serveTranspiledTS(w, r) {
+			return
+		}
+	}
+
+	if s.livereloadEnabled {
+		// Wrap the ResponseWriter so HTML responses get the livereload
+		// script tag injected before </body>.
+		iw := &htmlInjectingWriter{ResponseWriter: w}
+		s.fileServer.ServeHTTP(iw, r)
+		if err := iw.finish(); err != nil {
+			log.Printf("response finish: %v", err)
+		}
 		return
 	}
 
-	// Wrap the ResponseWriter so HTML responses get the livereload script
-	// tag injected before </body>.
-	iw := &htmlInjectingWriter{ResponseWriter: w}
-	s.fileServer.ServeHTTP(iw, r)
-	if err := iw.finish(); err != nil {
-		log.Printf("response finish: %v", err)
-	}
+	// Livereload disabled: no routing for /__livereload*, no injection.
+	// Requests to those paths fall through to the file server, which
+	// returns 404 (nothing on disk under those names).
+	s.fileServer.ServeHTTP(w, r)
 }
 
 // setCommonHeaders installs the headers every response needs for this to be

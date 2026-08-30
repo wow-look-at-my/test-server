@@ -72,6 +72,24 @@ func TestInjectLivereload(t *testing.T) {
 
 }
 
+func TestEncodeReloadPayload(t *testing.T) {
+	// Empty batch — always emits an object with an empty array, never
+	// null, so the browser parser doesn't need a null check.
+	assert.Equal(t, `{"changes":[]}`, encodeReloadPayload(nil))
+	assert.Equal(t, `{"changes":[]}`, encodeReloadPayload([]reloadEvent{}))
+
+	// Single event, exact JSON.
+	got := encodeReloadPayload([]reloadEvent{{Path: "index.html", Op: "WRITE"}})
+	assert.Equal(t, `{"changes":[{"path":"index.html","op":"WRITE"}]}`, got)
+
+	// Multiple events, preserves order.
+	got = encodeReloadPayload([]reloadEvent{
+		{Path: "a.html", Op: "CREATE|WRITE"},
+		{Path: "sub/b.css", Op: "WRITE"},
+	})
+	assert.Equal(t, `{"changes":[{"path":"a.html","op":"CREATE|WRITE"},{"path":"sub/b.css","op":"WRITE"}]}`, got)
+}
+
 func TestReloadHubBroadcast(t *testing.T) {
 	hub := newReloadHub()
 	ch1 := hub.subscribe()
@@ -79,25 +97,30 @@ func TestReloadHubBroadcast(t *testing.T) {
 	n := hub.subscriberCount()
 	require.Equal(t, 2, n)
 
-	hub.broadcast()
+	first := []reloadEvent{{Path: "a.html", Op: "WRITE"}}
+	hub.broadcast(first)
 
 	select {
-	case <-ch1:
+	case got := <-ch1:
+		assert.Equal(t, first, got)
 	case <-time.After(time.Second):
 		t.Fatal("ch1 did not receive broadcast")
 	}
 	select {
-	case <-ch2:
+	case got := <-ch2:
+		assert.Equal(t, first, got)
 	case <-time.After(time.Second):
 		t.Fatal("ch2 did not receive broadcast")
 	}
 
-	// Coalescing: two broadcasts without a receive should still only
-	// deliver one wakeup.
-	hub.broadcast()
-	hub.broadcast()
+	// Coalescing: a second broadcast before the first is read replaces
+	// the pending batch rather than stacking up or being dropped.
+	hub.broadcast([]reloadEvent{{Path: "old.html", Op: "WRITE"}})
+	latest := []reloadEvent{{Path: "new.html", Op: "CREATE"}}
+	hub.broadcast(latest)
 	select {
-	case <-ch1:
+	case got := <-ch1:
+		assert.Equal(t, latest, got)
 	case <-time.After(time.Second):
 		t.Fatal("ch1 did not receive coalesced broadcast")
 	}
@@ -211,7 +234,7 @@ func TestHandleLivereloadSSE(t *testing.T) {
 	require.NotEqual(t, 0, hub.subscriberCount())
 
 	var mu sync.Mutex
-	var gotReload bool
+	var gotLine []byte
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -221,11 +244,15 @@ func TestHandleLivereloadSSE(t *testing.T) {
 			n, err := resp.Body.Read(buf)
 			if n > 0 {
 				seen.Write(buf[:n])
-				if bytes.Contains(seen.Bytes(), []byte("data: reload")) {
-					mu.Lock()
-					gotReload = true
-					mu.Unlock()
-					return
+				if idx := bytes.Index(seen.Bytes(), []byte("data: {")); idx >= 0 {
+					// Capture up to (and including) the next \n\n.
+					rest := seen.Bytes()[idx:]
+					if end := bytes.Index(rest, []byte("\n\n")); end >= 0 {
+						mu.Lock()
+						gotLine = append([]byte(nil), rest[:end]...)
+						mu.Unlock()
+						return
+					}
 				}
 			}
 			if err != nil {
@@ -235,7 +262,7 @@ func TestHandleLivereloadSSE(t *testing.T) {
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	hub.broadcast()
+	hub.broadcast([]reloadEvent{{Path: "index.html", Op: "WRITE"}})
 
 	select {
 	case <-done:
@@ -246,6 +273,8 @@ func TestHandleLivereloadSSE(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.True(t, gotReload)
+	assert.Contains(t, string(gotLine), `"changes":`)
+	assert.Contains(t, string(gotLine), `"path":"index.html"`)
+	assert.Contains(t, string(gotLine), `"op":"WRITE"`)
 
 }

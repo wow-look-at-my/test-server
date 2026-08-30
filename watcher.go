@@ -12,13 +12,16 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const debounceWindow = 100 * time.Millisecond
-
 // watchTree walks the tree rooted at root, registers every directory with
 // fsnotify, and broadcasts a reload to hub whenever anything changes. New
 // directories discovered at runtime are automatically added to the watch
 // set. Events are debounced so a batch of saves produces one reload.
-func watchTree(ctx context.Context, root string, followSymlinks bool, hub *reloadHub) error {
+//
+// Debounce is trailing-edge: the timer resets on every incoming event, so
+// the broadcast fires `debounce` after events *stop*, not after the first
+// event. The broadcast carries the list of changed files accumulated over
+// the window — paths relative to root, forward-slash separated.
+func watchTree(ctx context.Context, root string, followSymlinks bool, debounce time.Duration, hub *reloadHub) error {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("new watcher: %w", err)
@@ -35,8 +38,8 @@ func watchTree(ctx context.Context, root string, followSymlinks bool, hub *reloa
 		return fmt.Errorf("walk: %w", err)
 	}
 
-	var pending bool
-	timer := time.NewTimer(debounceWindow)
+	var pending []reloadEvent
+	timer := time.NewTimer(debounce)
 	timer.Stop()
 
 	for {
@@ -56,15 +59,30 @@ func watchTree(ctx context.Context, root string, followSymlinks bool, hub *reloa
 					_ = walkDirs(ev.Name, followSymlinks, addDir)
 				}
 			}
-			if !pending {
-				pending = true
-				timer.Reset(debounceWindow)
+			pending = append(pending, reloadEvent{
+				Path: relPathForWire(root, ev.Name),
+				Op:   opString(ev.Op),
+			})
+			// Always reset to implement trailing-edge debounce: the
+			// window extends as long as events keep arriving. Stop
+			// + drain before Reset to avoid the race where the
+			// timer has fired but nobody's read from C yet.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
+			timer.Reset(debounce)
 
 		case <-timer.C:
-			if pending {
-				pending = false
-				hub.broadcast()
+			if len(pending) > 0 {
+				for _, ev := range pending {
+					log.Printf("test-server: changed %s (%s)", ev.Path, ev.Op)
+				}
+				log.Printf("test-server: reloading (%d file(s))", len(pending))
+				hub.broadcast(pending)
+				pending = nil
 			}
 
 		case err, ok := <-w.Errors:
@@ -74,6 +92,44 @@ func watchTree(ctx context.Context, root string, followSymlinks bool, hub *reloa
 			log.Printf("watcher error: %v", err)
 		}
 	}
+}
+
+// opString renders an fsnotify.Op as a pipe-joined list of set bits (e.g.
+// "CREATE|WRITE"). Order is fixed so identical ops always stringify the
+// same way. Returns "UNKNOWN" for an all-zero Op, which shouldn't happen
+// but keeps the wire format non-empty.
+func opString(op fsnotify.Op) string {
+	var parts []string
+	if op&fsnotify.Create != 0 {
+		parts = append(parts, "CREATE")
+	}
+	if op&fsnotify.Write != 0 {
+		parts = append(parts, "WRITE")
+	}
+	if op&fsnotify.Remove != 0 {
+		parts = append(parts, "REMOVE")
+	}
+	if op&fsnotify.Rename != 0 {
+		parts = append(parts, "RENAME")
+	}
+	if op&fsnotify.Chmod != 0 {
+		parts = append(parts, "CHMOD")
+	}
+	if len(parts) == 0 {
+		return "UNKNOWN"
+	}
+	return strings.Join(parts, "|")
+}
+
+// relPathForWire returns path relative to root with forward-slash
+// separators, suitable for logging and the SSE JSON payload. Falls back
+// to the original path (also forward-slashed) if relativization fails.
+func relPathForWire(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(rel)
 }
 
 // walkDirs walks the tree rooted at root and invokes add(dir) for every

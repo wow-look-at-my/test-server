@@ -3,6 +3,7 @@ module github.com/wow-look-at-my/test-server
 go 1.24
 
 require (
+	github.com/evanw/esbuild v0.28.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
