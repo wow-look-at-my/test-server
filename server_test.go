@@ -17,7 +17,7 @@ func TestSetCommonHeaders(t *testing.T) {
 	setCommonHeaders(rec)
 	want := map[string]string{
 		"Cross-Origin-Opener-Policy":           "same-origin",
-		"Cross-Origin-Embedder-Policy":         "require-corp",
+		"Cross-Origin-Embedder-Policy":         "credentialless",
 		"Cross-Origin-Resource-Policy":         "cross-origin",
 		"Access-Control-Allow-Origin":          "*",
 		"Access-Control-Allow-Methods":         "*",
