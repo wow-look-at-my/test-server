@@ -11,8 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/wow-look-at-my/go-containers/set"
 )
 
 const (
@@ -45,19 +43,19 @@ type reloadEvent struct {
 // clients always see the most recent state rather than a stale one.
 type reloadHub struct {
 	mu     sync.Mutex
-	subs   set.Set[chan []reloadEvent]
+	subs   map[chan []reloadEvent]struct{}
 	closed atomic.Bool
 }
 
 func newReloadHub() *reloadHub {
-	return &reloadHub{subs: set.New[chan []reloadEvent]()}
+	return &reloadHub{subs: make(map[chan []reloadEvent]struct{})}
 }
 
 func (h *reloadHub) subscribe() chan []reloadEvent {
 	ch := make(chan []reloadEvent, 1)
 	h.mu.Lock()
 	if !h.closed.Load() {
-		h.subs.Add(ch)
+		h.subs[ch] = struct{}{}
 	} else {
 		close(ch)
 	}
@@ -67,14 +65,14 @@ func (h *reloadHub) subscribe() chan []reloadEvent {
 
 func (h *reloadHub) unsubscribe(ch chan []reloadEvent) {
 	h.mu.Lock()
-	h.subs.Remove(ch)
+	delete(h.subs, ch)
 	h.mu.Unlock()
 }
 
 func (h *reloadHub) broadcast(changes []reloadEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.subs.All() {
+	for ch := range h.subs {
 		// Drain any stale pending batch first, then send the latest.
 		// Buffer is 1, so this keeps the newest changes instead of
 		// dropping them on the floor.
@@ -93,16 +91,16 @@ func (h *reloadHub) closeAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed.Store(true)
-	for ch := range h.subs.All() {
+	for ch := range h.subs {
 		close(ch)
+		delete(h.subs, ch)
 	}
-	h.subs.Clear()
 }
 
 func (h *reloadHub) subscriberCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.subs.Len()
+	return len(h.subs)
 }
 
 func (s *server) handleLivereload(w http.ResponseWriter, r *http.Request) {
