@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 	"time"
-	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func TestShouldIgnoreEvent(t *testing.T) {
@@ -168,12 +168,12 @@ func TestWatchTreeTrailingEdgeDebounce(t *testing.T) {
 
 	// Gather filenames from the batch so we can assert on them regardless
 	// of event order/duplicates.
-	names := map[string]bool{}
+	names := set.New[string]()
 	for _, ev := range batch {
-		names[ev.Path] = true
+		names.Add(ev.Path)
 	}
-	assert.True(t, names["a.txt"], "expected a.txt in batch, got %v", batch)
-	assert.True(t, names["b.txt"], "expected b.txt in batch, got %v", batch)
+	assert.True(t, names.Contains("a.txt"), "expected a.txt in batch, got %v", batch)
+	assert.True(t, names.Contains("b.txt"), "expected b.txt in batch, got %v", batch)
 
 	// And no second broadcast should land within another full debounce
 	// — because the two writes were coalesced.

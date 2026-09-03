@@ -95,7 +95,6 @@ func setCommonHeaders(w http.ResponseWriter) {
 	// load; require-corp blocks any of them whose server does not send CORP.
 	h.Set("Cross-Origin-Embedder-Policy", "credentialless")
 	h.Set("Cross-Origin-Resource-Policy", "cross-origin")
-	h.Set("Cross-Origin-Resource-Policy", "cross-origin")
 	h.Set("Access-Control-Allow-Origin", "*")
 	h.Set("Access-Control-Allow-Methods", "*")
 	h.Set("Access-Control-Allow-Headers", "*")
